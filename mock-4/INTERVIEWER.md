@@ -133,30 +133,22 @@ Postgres, because it's an index seek.
 
 Hand over `PR.md`. Ask: **"What's off, and why does it matter?"**
 
-The ranking is the signal. **A candidate who lists defects flat has reviewed a
-diff; one who leads with D1 and says why it outranks the rest has done code
-review.**
+One commit, three defects. The ranking is the signal. **A candidate who lists
+the three flat has reviewed a diff; one who leads with D1 and says why it
+outranks the rest has done code review.**
 
 | # | Tier | Where | Defect | Spec rule |
 |---|---|---|---|---|
 | **D1** | **Deep / security** | `api/shipments.py` `load_owned` | `X-Ship-On-Behalf-Of` header used for tenant scoping. Any merchant reads any shipment. | **3** |
 | D2 | Surface | `api/shipments.py` `get_shipment` | `queue_position` loads and sorts the whole collection to compute one integer. | **1** |
-| D3 | Mid | `api/shipments.py` `list_shipments` | `destination_contains` filters *after* `paginate`. Short pages, wrong `has_more`. | **2** |
-| D4 | Mid | `api/shipments.py` `bulk_cancel` | Writes `state` directly via `store.update`, bypassing `apply_transition`. Cancels a *delivered* shipment. | **5, 6** |
-| D5 | Surface | `api/shipments.py` `bulk_cancel` | Another merchant's ID returns **403**, confirming it exists. | **4** |
-| D6 | Mid | `services/shipping.py` | Duplicate-claim check lost its `status="open"` filter — a merchant can never file a second claim after the first resolves. | — |
-| **D7** | **Deep / silent** | `api/scans.py` `_apply_one` | `delivered` scan skips `apply_transition` entirely. A `label_created` shipment jumps straight to `delivered` with a **202 and no error**. | **6** |
+| **D3** | **Deep / silent** | `api/scans.py` `_apply_one` | `delivered` scan skips `apply_transition` entirely. A `label_created` shipment jumps straight to `delivered` with a **202 and no error**. | **6** |
 
 ### Reproductions (all verified)
 
 ```
-D1 tenant bypass via header:        200  Seattle, WA   ← another merchant's data
-D2 queue_position present:          True -> 1
-D3 asked limit=3, got 2 rows, has_more=True
-D4 bulk-cancel revives delivered:   200  state=cancelled
-D5 cross-tenant:                    403  forbidden     ← should be 404
-D6 second claim after resolve:      409  duplicate_claim
-D7 label_created -> delivered:      202  state=delivered  (skipped in_transit)
+D1 tenant bypass via header:    200 Seattle, WA   <- another merchant's data
+D2 queue_position present:      True -> 1
+D3 label_created -> delivered:  202 state=delivered  (skipped in_transit)
 ```
 
 ### What a strong candidate says
@@ -165,15 +157,20 @@ D7 label_created -> delivered:      202  state=delivered  (skipped in_transit)
   proxy sets the header, but nothing here verifies that, and the app can't tell
   a proxy-set header from a client-set one. If it's ever reachable directly —
   or if the proxy doesn't strip it — any merchant reads any shipment by
-  guessing IDs. That's a data breach, the rest are bugs." **Rule 3 forbids it
-  outright.**
-- **On D7:** "This one's worse than it looks because it returns 202. Nothing
+  guessing IDs. That's a data breach, the other two are bugs." **Rule 3 forbids
+  it outright.**
+- **On D3:** "This one's worse than it looks because it returns 202. Nothing
   fails, nothing logs, the shipment just teleports. And it's the *reason a test
   changed* — the test that asserted illegal transitions are rejected got
   rewritten to assert the opposite. A changed test means a changed contract."
 - **On D2:** "Detail endpoints shouldn't touch collections. Rule 1. At a
   thousand shipments per merchant this is a sort on every page load."
 - **Noticing the changed test at all** is a strong signal. It's in the diff.
+
+**If they finish early,** push on D3: *"What should this have done instead?"*
+→ Add `label_created -> delivered` to `TRANSITIONS` if the carrier really is
+authoritative, so the move stays legal and stamped in one place. The bug isn't
+trusting the carrier; it's writing state around the state machine to do it.
 
 ### False positives — do NOT credit these as defects
 
@@ -183,8 +180,10 @@ D7 label_created -> delivered:      202  state=delivered  (skipped in_transit)
    and then work out the reason. Credit the reasoning, not the flag.
 2. **`with_etag(shipment, 201)` in `create_shipment` takes defaults elsewhere.**
    The defaults are correct.
-3. **`bulk_cancel` has no pagination.** Looks like an oversight; it's a
-   write endpoint taking an explicit ID list. Not a defect.
+3. **`queue_position` sorting by `created_at` looks like a paging bug.** It
+   isn't — this is a single-record read, not a paging walk. The full scan (D2)
+   is the real defect here, not the sort key.
+
 
 ---
 
@@ -201,7 +200,7 @@ D7 label_created -> delivered:      202  state=delivered  (skipped in_transit)
 **Weak**
 - Narrates the notification system that doesn't exist.
 - Describes the handler without ever mentioning middleware.
-- Lists all seven defects flat, security bug third, no severity reasoning.
+- Lists all three defects flat, security bug last, no severity reasoning.
 - Wants to delete `serialize()`.
 - Treats 202 as 201.
 - Guesses at what a file does from its name without opening it.
@@ -221,9 +220,13 @@ D7 label_created -> delivered:      202  state=delivered  (skipped in_transit)
 
 **Cut order when running long:**
 1. Design question 3 or 4 (keep one of 1/2 — sorting is the best one).
-2. PR defects D5 and D6 — take D1, D7, D2, D3 and stop.
+2. PR defect D2 — take D1 and D3 and stop.
 3. Follow-ups 3 and 4 on the trace question.
 4. **Never cut:** the trace question itself, or D1 in the PR.
+
+The PR is one commit and three defects, so task 3 has slack. If they find all
+three before minute 55, spend the rest on *why D1 outranks D3* — that argument
+is the most discriminating thing in the round.
 
 ---
 
@@ -231,6 +234,8 @@ D7 label_created -> delivered:      202  state=delivered  (skipped in_transit)
 
 - ✅ 57 tests green on the base; **58 green with `PR.md` applied** (the count
   in the PR matches).
+- ✅ `PR.md` is one commit, 134 lines, three defects — sized for a 13-minute
+  review slot.
 - ✅ Every defect above reproduces via a script that was actually run — output
   pasted verbatim under "Reproductions".
 - ✅ The planted `attempted` gap is reachable and untested.

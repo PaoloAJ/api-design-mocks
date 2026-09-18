@@ -13,7 +13,7 @@ receiving scans. Both live outside this service.
 from flask import Blueprint, g, jsonify, request
 
 from core.errors import APIError, ValidationError
-from core.store import store
+from core.store import store, utcnow
 from services.shipping import apply_transition
 
 bp = Blueprint("scans", __name__, url_prefix="/v1/scans")
@@ -102,7 +102,14 @@ def _apply_one(scan):
 
     target = SCAN_STATES[code]
     if target and target != shipment["state"]:
-        changes = apply_transition(shipment, target, source="scan")
-        shipment = store.update("shipments", shipment_id, changes)
+        if target == "delivered":
+            # The carrier is the source of truth for delivery. If they scanned
+            # it delivered, it is delivered, whatever we think the state is.
+            shipment = store.update(
+                "shipments", shipment_id, {"state": "delivered", "delivered_at": utcnow()}
+            )
+        else:
+            changes = apply_transition(shipment, target, source="scan")
+            shipment = store.update("shipments", shipment_id, changes)
 
     return {"scan_id": record["id"], "shipment_id": shipment_id, "state": shipment["state"]}

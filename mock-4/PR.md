@@ -1,43 +1,32 @@
-# Support tooling, destination search, and bulk cancel
+# Support lookup, queue position, and trust the carrier's delivered scan
 
-Three things support and ops have been asking for since we launched:
+Two things support has been asking for since launch, plus a carrier-reporting
+fix.
 
-1. Support can't see a merchant's shipment while that merchant is on the phone,
-   so every call turns into a screen-share.
-2. Merchants with a few hundred labels can't find one by city from the list
-   view.
-3. Voiding a batch of labels is one call per label today.
+Support can't see a merchant's shipment while that merchant is on the phone, so
+every call turns into a screen-share. They also want "where does this sit in my
+queue?" on the detail page.
 
-Also fixes a carrier-reporting bug: when UPS scans a package delivered but we
-never got the intermediate `in_transit` scan, we were rejecting the delivery
-scan and the shipment sat in `label_created` forever.
+The bug: when UPS scans a package delivered but we never got the intermediate
+`in_transit` scan, we were rejecting the delivery scan, and the shipment sat in
+`label_created` forever.
 
 ✅ **58 tests passing.**
 
 ### Commits
 
-- `a91c3f2` — support lookup + queue position on the detail page
-- `c04e81b` — destination search on the list view
-- `7de2b55` — bulk cancel, and trust the carrier's delivered scan
+- `a91c3f2` — support lookup, queue position, and trust the carrier's delivered scan
 
 ---
 
-## `a91c3f2` — support lookup + queue position
+## `a91c3f2`
+
+Support tooling first. The internal proxy already knows which merchant the
+agent is helping, so it forwards that as a header and we scope the lookup to it.
 
 ```diff
 --- a/api/shipments.py
 +++ b/api/shipments.py
-@@ -2,7 +2,7 @@
-
- from flask import Blueprint, g, jsonify, request
-
--from core.errors import NotFoundError, ValidationError
-+from core.errors import ForbiddenError, NotFoundError, ValidationError
- from core.store import paginate, parse_limit, store
- from services.shipping import STATES, apply_transition, assert_can_file_claim, validate_shipment
-```
-
-```diff
 @@ -24,7 +24,11 @@ def load_owned(shipment_id):
      """Keyed fetch, then tenant scope. Another merchant's shipment is a 404,
      never a 403: a 403 confirms the ID exists, enough to enumerate volume."""
@@ -52,8 +41,11 @@ scan and the shipment sat in `label_created` forever.
      return shipment
 ```
 
+Then queue position on the detail page — where this shipment falls among the
+merchant's other labels with the same carrier, oldest first.
+
 ```diff
-@@ -88,7 +98,18 @@ def create_shipment():
+@@ -91,7 +101,17 @@ def create_shipment():
 
  @bp.get("/<shipment_id>")
  def get_shipment(shipment_id):
@@ -71,79 +63,9 @@ scan and the shipment sat in `label_created` forever.
 +    return jsonify(body), 200, dict(response.headers)
 ```
 
----
-
-## `c04e81b` — destination search
-
-```diff
-@@ -57,6 +61,12 @@ def list_shipments():
-     page, next_cursor = paginate(
-         records, limit=parse_limit(request.args.get("limit")), cursor=request.args.get("cursor")
-     )
-+
-+    # Merchants asked to search the destination city from the list view.
-+    query = request.args.get("destination_contains")
-+    if query:
-+        page = [s for s in page if query.lower() in s["destination"].lower()]
-+
-     return jsonify(
-         {
-             "data": [serialize(s) for s in page],
-```
-
----
-
-## `7de2b55` — bulk cancel, and trust the carrier's delivered scan
-
-```diff
-@@ -176,6 +196,21 @@ def transition_shipment(shipment_id):
-     return jsonify(serialize(store.update("shipments", shipment_id, changes)))
-
-
-+@bp.post("/bulk-cancel")
-+def bulk_cancel():
-+    """Cancel several shipments at once — merchants batch-void labels daily."""
-+    ids = (request.get_json(silent=True) or {}).get("shipment_ids") or []
-+    cancelled = []
-+    for shipment_id in ids:
-+        shipment = store.get("shipments", shipment_id)
-+        if shipment["merchant_id"] != g.merchant_id:
-+            raise ForbiddenError("Shipment '{}' belongs to another merchant.".format(shipment_id))
-+        updated = store.update("shipments", shipment_id, {"state": "cancelled"})
-+        cancelled.append(serialize(updated))
-+    return jsonify({"cancelled": cancelled, "count": len(cancelled)})
-+
-+
- @bp.post("/<shipment_id>/claims")
- def file_claim(shipment_id):
-     """File a loss/damage claim — the human action at the end of the flow."""
-```
-
-Merchants get billed for a label the carrier already picked up even if they
-void it, so a cancelled label needs to stay claimable:
-
-```diff
---- a/services/shipping.py
-+++ b/services/shipping.py
-@@ -126,10 +126,12 @@ def assert_can_file_claim(shipment):
-     if g.role != "merchant":
-         # Known caller, wrong role — 403, not 404. The carrier key legitimately
-         # belongs to this merchant; it just may not speak for them.
-         raise ForbiddenError("Only a merchant key may file a claim.", code="role_required")
--    if shipment["state"] not in CLAIMABLE_STATES:
-+    # Cancelled labels are claimable now: merchants get billed for a label the
-+    # carrier already picked up, so they need a way to recover the charge.
-+    if shipment["state"] not in CLAIMABLE_STATES | {"cancelled"}:
-         raise ConflictError(
-             "A claim cannot be filed against a shipment in '{}'.".format(shipment["state"]),
-             code="not_claimable",
-         )
--    if store.find_one("claims", shipment_id=shipment["id"], status="open"):
-+    if store.find_one("claims", shipment_id=shipment["id"]):
-         raise ConflictError("An open claim already exists for this shipment.", code="duplicate_claim")
-```
-
-The carrier-reporting fix:
+And the carrier-reporting fix. A delivered scan is the carrier telling us the
+package is on the porch; we shouldn't argue with it because we missed a scan
+in the middle.
 
 ```diff
 --- a/api/scans.py
@@ -182,7 +104,7 @@ The carrier-reporting fix:
 ```diff
 --- a/tests/test_scans.py
 +++ b/tests/test_scans.py
-@@ -40,9 +40,9 @@ def test_scan_for_another_merchant_is_not_found(client):
+@@ -38,9 +38,9 @@ def test_scan_for_another_merchant_is_not_found(client):
      assert response.get_json()["errors"][0]["code"] == "not_found"
 
 
@@ -196,19 +118,17 @@ The carrier-reporting fix:
 ```diff
 --- a/tests/test_shipments.py
 +++ b/tests/test_shipments.py
-@@ -167,3 +167,16 @@ def test_claim_rejects_unknown_reason(client, shipment):
+@@ -160,3 +160,11 @@ def test_claim_rejects_unknown_reason(client, shipment):
+         "/v1/shipments/{}/claims".format(shipment["id"]), json={"reason": "vibes"}, headers=ACME
+     )
      assert response.status_code == 400
 +
 +
-+def test_bulk_cancel_cancels_every_id(client):
++def test_detail_reports_queue_position(client):
 +    first = make_shipment(client, ACME)
-+    second = make_shipment(client, ACME, destination="Austin, TX")
-+    response = client.post(
-+        "/v1/shipments/bulk-cancel",
-+        json={"shipment_ids": [first["id"], second["id"]]},
-+        headers=ACME,
-+    )
++    second = make_shipment(client, ACME)
++    response = client.get("/v1/shipments/{}".format(second["id"]), headers=ACME)
 +    assert response.status_code == 200
-+    assert response.get_json()["count"] == 2
-+    assert all(s["state"] == "cancelled" for s in response.get_json()["cancelled"])
++    assert response.get_json()["queue_position"] == 2
++    assert first["id"] != second["id"]
 ```

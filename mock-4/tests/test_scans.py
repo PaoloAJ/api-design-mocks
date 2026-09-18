@@ -38,9 +38,9 @@ def test_scan_for_another_merchant_is_not_found(client):
     assert response.get_json()["errors"][0]["code"] == "not_found"
 
 
-def test_scan_cannot_make_an_illegal_transition(client, shipment):
+def test_carrier_delivered_scan_is_authoritative(client, shipment):
     response = post_scans(client, [{"shipment_id": shipment["id"], "code": "delivered"}])
-    assert response.get_json()["errors"][0]["code"] == "illegal_transition"
+    assert response.get_json()["errors"] == []
 
 
 def test_repeated_scan_of_current_state_is_accepted(client, shipment):
