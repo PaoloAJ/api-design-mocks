@@ -118,7 +118,7 @@ in the middle.
 ```diff
 --- a/tests/test_shipments.py
 +++ b/tests/test_shipments.py
-@@ -160,3 +160,11 @@ def test_claim_rejects_unknown_reason(client, shipment):
+@@ -160,3 +160,14 @@ def test_claim_rejects_unknown_reason(client, shipment):
          "/v1/shipments/{}/claims".format(shipment["id"]), json={"reason": "vibes"}, headers=ACME
      )
      assert response.status_code == 400
@@ -127,8 +127,10 @@ in the middle.
 +def test_detail_reports_queue_position(client):
 +    first = make_shipment(client, ACME)
 +    second = make_shipment(client, ACME)
-+    response = client.get("/v1/shipments/{}".format(second["id"]), headers=ACME)
-+    assert response.status_code == 200
-+    assert response.get_json()["queue_position"] == 2
-+    assert first["id"] != second["id"]
++    positions = set()
++    for shipment in (first, second):
++        response = client.get("/v1/shipments/{}".format(shipment["id"]), headers=ACME)
++        assert response.status_code == 200
++        positions.add(response.get_json()["queue_position"])
++    assert positions == {1, 2}
 ```

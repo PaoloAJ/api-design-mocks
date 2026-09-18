@@ -234,7 +234,7 @@ is the most discriminating thing in the round.
 
 - ✅ 57 tests green on the base; **58 green with `PR.md` applied** (the count
   in the PR matches).
-- ✅ `PR.md` is one commit, 134 lines, three defects — sized for a 13-minute
+- ✅ `PR.md` is one commit, 136 lines, three defects — sized for a 13-minute
   review slot.
 - ✅ Every defect above reproduces via a script that was actually run — output
   pasted verbatim under "Reproductions".

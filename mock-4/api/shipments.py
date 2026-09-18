@@ -24,11 +24,7 @@ def load_owned(shipment_id):
     """Keyed fetch, then tenant scope. Another merchant's shipment is a 404,
     never a 403: a 403 confirms the ID exists, enough to enumerate volume."""
     shipment = store.get("shipments", shipment_id)
-    # Support tooling needs to pull up a merchant's shipment while they're on
-    # the phone. The internal proxy sets X-Ship-On-Behalf-Of, so this header is
-    # trusted by the time it reaches us.
-    scope = request.headers.get("X-Ship-On-Behalf-Of") or g.merchant_id
-    if shipment["merchant_id"] != scope:
+    if shipment["merchant_id"] != g.merchant_id:
         raise NotFoundError("Shipment '{}' was not found.".format(shipment_id))
     return shipment
 
@@ -95,17 +91,7 @@ def create_shipment():
 
 @bp.get("/<shipment_id>")
 def get_shipment(shipment_id):
-    shipment = load_owned(shipment_id)
-    # Support asked for "where does this sit in my queue?" on the detail page.
-    same_carrier = [
-        s for s in store.list("shipments")
-        if s["merchant_id"] == shipment["merchant_id"] and s["carrier"] == shipment["carrier"]
-    ]
-    same_carrier.sort(key=lambda s: s["created_at"])
-    response = with_etag(shipment)
-    body = response.get_json()
-    body["queue_position"] = [s["id"] for s in same_carrier].index(shipment_id) + 1
-    return jsonify(body), 200, dict(response.headers)
+    return with_etag(load_owned(shipment_id))
 
 
 @bp.patch("/<shipment_id>")

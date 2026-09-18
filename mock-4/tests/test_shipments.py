@@ -160,14 +160,3 @@ def test_claim_rejects_unknown_reason(client, shipment):
         "/v1/shipments/{}/claims".format(shipment["id"]), json={"reason": "vibes"}, headers=ACME
     )
     assert response.status_code == 400
-
-
-def test_detail_reports_queue_position(client):
-    first = make_shipment(client, ACME)
-    second = make_shipment(client, ACME)
-    positions = set()
-    for shipment in (first, second):
-        response = client.get("/v1/shipments/{}".format(shipment["id"]), headers=ACME)
-        assert response.status_code == 200
-        positions.add(response.get_json()["queue_position"])
-    assert positions == {1, 2}
