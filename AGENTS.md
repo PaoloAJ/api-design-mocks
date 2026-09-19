@@ -75,7 +75,6 @@ correctness bugs does not match the reported round.
 ```
 mock-N/
   app/                  the application
-  tests/                a passing suite
   requirements.txt      two dependencies, ideally
   wsgi.py               one command to run it
   INTERVIEWER.md        the guide — answer keys, questions, grading
@@ -92,6 +91,10 @@ self-study artifact — a case built for live interviewing should not have one.
 Everything the interviewer needs lives in `INTERVIEWER.md`. Everything the
 candidate is *told* comes out of the interviewer's mouth. The only files handed
 to the candidate are the app itself, `SPEC.md`, and `PR.md`.
+
+The PR should be framed as an attempted implementation of the feature at hand:
+it is trying to do the right thing, but it contains a few intentional logic
+errors and design mistakes that the candidate is meant to catch.
 
 ---
 
