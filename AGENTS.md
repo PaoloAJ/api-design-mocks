@@ -5,7 +5,9 @@ repo. Read this fully before writing any code.
 
 A **case** is a small, self-contained web app plus an interviewer guide. It is
 the shared reference for a ~60 minute verbal mock interview. `mock-1/` is the
-reference implementation — read it before building a second one.
+reference implementation — read it first, but note that it predates the size
+and layout reports in §1: it is bigger and more nested than a new case should
+be. Copy its content, not its shape.
 
 ---
 
@@ -56,7 +58,28 @@ These are first-hand and they constrain the design more than the slide does:
 > to do**. So when you get there, make sure to review the design spec and
 > check for any things they said not to do."
 
-Four hard requirements fall out of those quotes. They are not suggestions:
+Asked whether the round covered systems design, databases, or scaling, or was
+solely API design:
+
+> "**Api design** but can mention those things if you want to show knowledge
+> but don't larp."
+
+Asked how many endpoints the app had:
+
+> "Not sure but probably **less than 10** yeah."
+
+Asked whether it was structured with controllers / services / routes folders:
+
+> "**One main folder besides setup and data stuff.**"
+
+Asked whether they needed pointing in the right direction during the round:
+
+> "Yes for sure, once during PR review to **re-check the problem statement and
+> constraints**, and a few times during designing the feature as at first I
+> didn't understand that **the feature was intended to be something that will
+> apply to all future imports and not just fixing the current ones**."
+
+Seven hard requirements fall out of those quotes. They are not suggestions:
 
 | Report | Requirement |
 |---|---|
@@ -64,9 +87,19 @@ Four hard requirements fall out of those quotes. They are not suggestions:
 | "not many files at all" | Hard ceiling on size. See §3. |
 | "data flow was the biggest hurdle" | There must be **one traceable path** through the whole system that crosses an async boundary. This is the spine of the case. |
 | "iterating over entire things", "design spec said not to do" | PR defects must include **an unnecessary full scan** and **a spec violation**. See §7. |
+| "less than 10" endpoints | **Cap the API at 9 endpoints.** See §3. |
+| "one main folder besides setup and data stuff" | **Flatten the tree.** One package of app code; setup and seed data outside it. See §3. |
+| "don't larp" | The case must reward **API-design reasoning only**. No schema design, no sharding, no scaling chat. §4's deliberate gaps are for *asking about*, not for designing a queue backend. |
 
-That last row is the most commonly missed. A case whose PR contains only
+Row four is the most commonly missed. A case whose PR contains only
 correctness bugs does not match the reported round.
+
+**The feature-design task is about a rule, not a repair.** The last quote is a
+reported stumble: the candidate first read the design task as "fix the records
+that are currently wrong" when it meant "make every future import behave this
+way." Write the task in §8 so that ambiguity exists — it is a real signal — but
+give the interviewer the one-line correction to hand over when the candidate
+starts designing a backfill.
 
 ---
 
@@ -74,7 +107,8 @@ correctness bugs does not match the reported round.
 
 ```
 mock-N/
-  app/                  the application
+  app/                  the application — flat, no sub-packages (§3)
+  seed.py               the data stuff
   requirements.txt      two dependencies, ideally
   wsgi.py               one command to run it
   INTERVIEWER.md        the guide — answer keys, questions, grading
@@ -100,24 +134,43 @@ errors and design mistakes that the candidate is meant to catch.
 
 ## 3. Size limits
 
-Calibrated against `mock-1`: **1,495 lines of app code across 12 files**, two
-dependencies, ~48 tests.
+`mock-1` is the calibration point but it is **oversized against the reports**:
+1,495 lines over 12 files in two sub-packages. Build smaller.
 
 | | Target | Hard ceiling |
 |---|---|---|
-| App code (excl. tests) | 1,000–1,500 lines | 1,800 |
-| Files under `app/` | 8–12 | 15 |
+| App code (excl. tests) | 700–1,000 lines | 1,200 |
+| Files under `app/` | 7–9 | 10 |
+| **Endpoints** | **6–8** | **9** |
 | Third-party dependencies | 2 | 3 |
-| Directory depth below `app/` | 1 | 1 |
-| Tests | 40–60 | — |
+| Directory depth below `app/` | **0** | 0 |
+| Tests | 30–50 | — |
 
 The candidate has ~3 minutes to orient before the first question. If the tree
 does not fit on one screen, the case is too big.
 
-**Depth matters more than line count.** `app/api/` and `app/core/` is the right
-shape: one directory of route handlers, one of shared machinery. A third level
-of nesting makes the app unreadable without search, which the candidate does
-not have.
+**Count endpoints before you write them.** A candidate reported "probably less
+than 10." That is the binding constraint on scope, more than line count is:
+three resources at full CRUD is already eleven routes and too many. Pick the
+routes that carry the interview questions in §5 and drop the rest — a resource
+with no `DELETE` is fine, and nobody will ask about the one you left out.
+
+**Flat, not layered.** Reported verbatim: *"one main folder besides setup and
+data stuff."* So:
+
+```
+app/            every module, flat — no sub-packages
+  __init__.py   app factory + route registration
+  middleware.py store.py  pagination.py  validation.py  errors.py
+  <resource>.py one module per resource, holding its routes
+seed.py         data, outside app/
+wsgi.py         setup, outside app/
+```
+
+Do **not** split into `app/api/` and `app/core/` the way `mock-1` does, and do
+not add a `services/` or `controllers/` layer — the reported codebase had
+neither. Every module is one `cat` away from the tree root, which is the only
+navigation a candidate without search actually has.
 
 ---
 
@@ -144,7 +197,8 @@ Other domains that work:
 
 Requirements for whichever you pick:
 
-- **Three to four resources, no more.** `mock-1` has monitors, alerts, series.
+- **Three resources, no more**, and not all of them get full CRUD — the whole
+  API is 9 routes at most (§3). `mock-1` has monitors, alerts, series.
 - **One state machine** with transitions that have side effects. This is what
   justifies an action sub-resource (`POST /resource/{id}/action`) over a plain
   field write, which is a top-three interview topic.
@@ -156,6 +210,14 @@ Requirements for whichever you pick:
 
 Avoid domains a candidate might know professionally — the round tests reasoning
 from code, not recall.
+
+**Keep the domain shallow enough that every question is an API question.** A
+candidate reported the round was "api design" and that adjacent topics are
+worth a mention but not a performance — *"don't larp."* So the domain should
+never require a real storage engine, a schema migration or a scaling story to
+discuss. If answering your design question well needs a database index or a
+partitioning scheme, it is the wrong question: the right one is about status
+codes, resource shape, idempotency or pagination.
 
 ---
 
@@ -185,6 +247,25 @@ and you lose the question.
 - **A liveness endpoint** that checks nothing, with no readiness counterpart.
 - **In-memory storage behind a lock.** No database. The subject is the HTTP
   contract, and it keeps setup to `pip install` + run.
+
+None of these costs an extra route — they are properties of routes you already
+have. The whole list fits inside the 9-route cap, and this is the budget that
+does it:
+
+| # | Route | Carries |
+|---|---|---|
+| 1 | `POST /resource` | idempotency header, validation envelope |
+| 2 | `GET /resource` | cursor pagination, filtering, tenant scoping |
+| 3 | `GET /resource/{id}` | ETag, cross-tenant `404` |
+| 4 | `PATCH /resource/{id}` | `If-Match` → `409` |
+| 5 | `POST /resource/{id}/{action}` | action sub-resource, state machine |
+| 6 | `POST /ingest` | bulk, partial success, `202`, the async boundary |
+| 7 | `GET /second-resource` | the state machine's output, paginated |
+| 8 | `POST /second-resource/{id}/{action}` | the human action at the end |
+| 9 | `GET /healthz` | liveness that checks nothing |
+
+Spend a slot differently if the domain wants it, but do not add a tenth.
+`DELETE` is the first thing to cut — nobody asks about it.
 
 **One planted logic gap.** `mock-1` has `no_data`: a valid state that falls
 through every branch in the transition handler, so the status changes but no
@@ -341,10 +422,25 @@ The only document the interviewer needs during the session. Required sections:
 4. **Design questions** for task 2 — three or four, each with a concrete
    right-ish answer rather than open architecture chat. The best ones have a
    hidden coupling: adding sorting breaks cursor pagination, and finding that
-   coupling *is* the answer.
+   coupling *is* the answer. Keep them inside the API surface — a question
+   best answered with an index or a shard key is the wrong question (§4).
+   For the main one, include:
+   - **A scope-correcting line, verbatim.** A candidate reported reading the
+     design task as fixing the records that are already wrong, when it meant
+     changing the rule for everything ingested from now on. Phrase the task so
+     that misreading is available, then give the interviewer the exact sentence
+     to say — *"to be clear, this should apply to every future import, not just
+     the ones already stored"* — and the cue for saying it: the candidate
+     starts designing a backfill or a repair endpoint.
+   - **Where to nudge, and what it costs.** Candidates get pointed in the right
+     direction in the real round; a nudge is not a failure. Mark which hints
+     are free (restating scope) and which cost credit (naming the coupling).
 5. **PR answer key** — every defect, its tier, the file and line, the `SPEC.md`
    rule it breaks, how to reproduce it, and what a strong candidate says about
-   it. Plus the false positives, labeled.
+   it. Plus the false positives, labeled. Include the **one standard nudge**:
+   *"have another look at the spec's constraints."* It was reported as the hint
+   the real interviewer gave, it is the fair one to give a stalled candidate,
+   and it turns the task back into reading rather than guessing.
 6. **Signals** — strong and weak, as concrete behaviors rather than adjectives.
    "Asks how pagination works before designing sorting" beats "shows
    curiosity".
@@ -378,7 +474,13 @@ Then confirm, and record the evidence in `INTERVIEWER.md`:
 - [ ] Tests are green with the PR patch applied, and the count in `PR.md`
       matches
 - [ ] The repo has one branch; no scratch PR branch is left behind
-- [ ] App code is under the §3 ceilings — measure, don't estimate
+- [ ] App code is under the §3 ceilings — measure, don't estimate:
+      `find app -name '*.py' | xargs wc -l | tail -1`
+- [ ] **9 endpoints or fewer** —
+      `grep -rE "^@(bp|app)\.(get|post|patch|put|delete)" app | wc -l`
+      then add any route defined inside the app factory, which the anchored
+      grep misses. (`mock-1` is 12 all in — well over. Not the target.)
+- [ ] **`app/` has no sub-directories** — `find app -type d` prints one line
 - [ ] No candidate-facing README exists
 - [ ] `SPEC.md` prohibits something the PR does, and the answer key cites the
       rule number

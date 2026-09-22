@@ -43,7 +43,7 @@ Suppression happens on the send path, before we create the message:
 Recipient history on the detail endpoint:
 
 ```diff
-@@ -129,7 +139,20 @@ def get_message(message_id):
+@@ -126,7 +136,20 @@ def get_message(message_id):
      collection — see SPEC rule 1.
      """
      message = store.get("messages", message_id, account_id=g.account["id"])
@@ -69,10 +69,10 @@ Recipient history on the detail endpoint:
 And the support lookup (second commit):
 
 ```diff
-@@ -101,7 +108,10 @@ def list_messages():
-     limit = parse_limit(request.args.get("limit"))
-     cursor = request.args.get("cursor")
- 
+@@ -98,7 +105,10 @@ def list_messages():
+     Filtering happens before pagination. Filtering a page after slicing it
+     returns short pages and a cursor that walks the wrong rows.
+     """
 -    records = store.list("messages", account_id=g.account["id"])
 +    # Support tooling passes the account it is looking at. Our internal proxy
 +    # strips this header from anything arriving off the public internet.
@@ -124,22 +124,34 @@ Reordered the event list so we paginate first — one pass over the page instead
 of scanning every record before slicing:
 
 ```diff
-@@ -145,11 +145,12 @@ def list_events():
- 
+@@ -142,16 +142,16 @@ def list_events():
+     """Read back the caller's events, newest first."""
      records = store.list("events", account_id=g.account["id"])
  
-+    page, next_cursor = paginate(records, limit=limit, cursor=cursor)
+-    # Filter before paginating, never after. See SPEC rule 2.
++    body = page_response(
++        records,
++        serialize,
++        limit=parse_limit(request.args.get("limit")),
++        cursor=request.args.get("cursor"),
++    )
 +
 +    # Filter the page down to the requested message.
      message_id = request.args.get("message_id")
      if message_id:
 -        records = [r for r in records if r["message_id"] == message_id]
 -
--    page, next_cursor = paginate(records, limit=limit, cursor=cursor)
-+        page = [r for r in page if r["message_id"] == message_id]
-     return jsonify(
-         {
-             "data": [serialize(r) for r in page],
+-    return jsonify(
+-        page_response(
+-            records,
+-            serialize,
+-            limit=parse_limit(request.args.get("limit")),
+-            cursor=request.args.get("cursor"),
+-        )
+-    )
++        body["data"] = [r for r in body["data"] if r["message_id"] == message_id]
++
++    return jsonify(body)
 ```
 
 ---

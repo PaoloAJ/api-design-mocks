@@ -228,7 +228,7 @@ Everyone should find this. A candidate who misses it did not read the diff.
 
 ## 6. Verified reproduction
 
-`source .venv/bin/activate && python repro_pr.py` with the PR applied:
+`cd interviewer && python repro_pr.py` with the PR applied:
 
 ```
 D1  SECURITY: X-Delivery-Account forges tenant scope (SPEC 3)

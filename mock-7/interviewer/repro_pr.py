@@ -1,6 +1,6 @@
 """Reproduce every planted defect in mock-7's PR. Run with the patch applied."""
 import sys
-sys.path.insert(0, ".")
+sys.path.insert(0, "..")
 
 from app import create_app
 from app.middleware import reset_rate_limits
