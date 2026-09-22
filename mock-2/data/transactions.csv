@@ -1,0 +1,11 @@
+id,account_id,type,amount,created_at,description
+txn_0001,acc_0001,deposit,2500.00,2026-01-05T08:00:00+00:00,Payroll
+txn_0002,acc_0001,withdrawal,120.45,2026-01-07T19:32:00+00:00,Groceries
+txn_0003,acc_0002,deposit,10000.00,2026-01-10T12:00:00+00:00,Initial funding
+txn_0004,acc_0002,withdrawal,4312.50,2026-01-12T14:30:00+00:00,Buy 25 VTI
+txn_0005,acc_0003,deposit,800.00,2026-02-15T09:00:00+00:00,Emergency fund
+txn_0006,acc_0004,deposit,1500.00,2026-02-13T10:00:00+00:00,Opening deposit
+txn_0007,acc_0005,deposit,5000.00,2026-03-02T11:11:00+00:00,Wire in
+txn_0008,acc_0001,deposit,2500.00,2026-01-19T08:00:00+00:00,Payroll
+txn_0009,acc_0003,withdrawal,50.00,2026-03-01T13:45:00+00:00,Transfer to checking
+txn_0010,acc_0006,deposit,300.00,2026-03-18T11:05:00+00:00,Opening deposit

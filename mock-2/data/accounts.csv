@@ -1,0 +1,7 @@
+id,owner,account_type,currency,status,created_at
+acc_0001,Maya Chen,checking,USD,active,2026-01-04T09:15:00+00:00
+acc_0002,Maya Chen,brokerage,USD,active,2026-01-04T09:20:00+00:00
+acc_0003,Jordan Reyes,savings,USD,active,2026-02-11T14:02:00+00:00
+acc_0004,Jordan Reyes,checking,EUR,frozen,2026-02-12T10:45:00+00:00
+acc_0005,Priya Natarajan,brokerage,GBP,active,2026-03-01T16:30:00+00:00
+acc_0006,Sam Okafor,checking,USD,closed,2026-03-18T11:00:00+00:00
